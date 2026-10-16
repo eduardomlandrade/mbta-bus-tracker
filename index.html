@@ -1,0 +1,757 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MBTA Live — Real-Time Bus Tracker</title>
+<style>
+  :root{
+    --bg:#ffffff;
+    --panel:#f7f7f8;
+    --panel-edge:#e2e4e8;
+    --text:#16181d;
+    --muted:#6b7280;
+    --amber:#b6560c;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--bg); color:var(--text);
+    font-family: -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    min-height:100vh;
+    padding: 28px 18px 60px;
+  }
+  .wrap{max-width:760px; margin:0 auto;}
+  header{margin-bottom:22px;}
+  h1{font-size:clamp(28px,5vw,38px); margin:0 0 4px; letter-spacing:-0.02em; font-weight:700;}
+  .sub{color:var(--muted); font-size:14.5px; max-width:52ch; line-height:1.5;}
+
+  select, input[type="search"]{
+    width:100%;
+    background:var(--panel);
+    color:var(--text);
+    border:1.5px solid var(--panel-edge);
+    padding:12px 14px;
+    border-radius:8px;
+    font-size:15px;
+    margin-bottom:14px;
+  }
+  select:disabled{opacity:.5;}
+  .route-meta{display:flex; align-items:center; gap:8px; margin:-4px 0 18px;}
+  .route-chip{
+    font-size:13px; font-weight:700; padding:3px 9px; border-radius:999px; flex:none;
+  }
+  .route-meta span.name{color:var(--muted); font-size:13.5px;}
+
+  .panel{
+    background:var(--panel);
+    border:1px solid var(--panel-edge);
+    border-radius:12px;
+    padding:18px;
+    margin-bottom:18px;
+  }
+  .panel h2{font-size:13px; color:var(--muted); margin:0 0 14px; font-weight:600;}
+
+  .board-row{
+    display:flex; align-items:baseline; justify-content:space-between;
+    padding:12px 0; border-bottom:1px solid var(--panel-edge); gap:14px;
+  }
+  .board-row:last-child{border-bottom:none;}
+  .board-left{min-width:0;}
+  .headsign{font-size:15.5px; font-weight:600;}
+  .status{font-size:12.5px; color:var(--muted); margin-top:2px;}
+  .mins{
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size:26px; font-weight:700; color:var(--amber);
+    flex:none; min-width:64px; text-align:right;
+  }
+  .mins small{font-size:13px; font-weight:600; color:var(--muted); margin-left:3px;}
+
+  .veh-row{display:flex; align-items:center; gap:10px; padding:9px 0; border-bottom:1px solid var(--panel-edge); font-size:14px;}
+  .veh-row:last-child{border-bottom:none;}
+  .veh-badge{width:8px; height:8px; border-radius:50%; flex:none;}
+  .veh-dest{color:var(--muted); font-size:12.5px;}
+
+  .alert-row{padding:11px 0; border-bottom:1px solid var(--panel-edge);}
+  .alert-row:last-child{border-bottom:none;}
+  .alert-top{display:flex; align-items:center; gap:8px; margin-bottom:3px;}
+  .alert-tag{font-size:11px; font-weight:700; padding:2px 7px; border-radius:999px; flex:none; color:#fff;}
+  .alert-tag.severe{background:#c62828;}
+  .alert-tag.moderate{background:#b6560c;}
+  .alert-tag.minor{background:#6b7280;}
+  .alert-tag.upcoming{background:#1c5fb6;}
+  .alert-header{font-size:14.5px; font-weight:600;}
+  .alert-dates{font-size:12.5px; color:var(--muted); margin-top:3px;}
+
+  .empty, .err{color:var(--muted); font-size:14px; padding:6px 0;}
+  .err{color:#b3261e;}
+
+  footer{color:var(--muted); font-size:12.5px; margin-top:24px; line-height:1.6;}
+  footer a{color:var(--muted);}
+
+  @media (prefers-reduced-motion: no-preference){
+    .board-row, .veh-row{ animation: fade .25s ease; }
+  }
+  @keyframes fade{ from{opacity:0;} to{opacity:1;} }
+  .hx-note{font-size:12.5px;color:var(--muted);line-height:1.5;margin:0 0 14px;}
+  .hx-block{margin-bottom:16px;}
+  .hx-block label{display:block;font-size:12.5px;color:var(--muted);margin-bottom:6px;font-weight:600;}
+  .hx-in{display:flex;gap:8px;flex-wrap:wrap;}
+  .hx-in input,.hx-in select{width:auto;flex:1;min-width:150px;margin:0;}
+  .hx-btn{background:var(--text);color:#fff;border:0;border-radius:8px;padding:0 18px;font-size:14px;font-weight:600;cursor:pointer;min-height:44px;}
+  .hx-btn.ghost{background:#fff;color:var(--text);border:1.5px solid var(--panel-edge);}
+  .hx-title{font-size:13px;font-weight:600;margin:14px 0 6px;}
+  .hx-item{display:flex;gap:12px;padding:9px 0;border-bottom:1px solid var(--panel-edge);font-size:14px;align-items:flex-start;}
+  .hx-item:last-child{border-bottom:none;}
+  .hx-time{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:13px;color:var(--amber);flex:none;min-width:96px;}
+  .hx-sub{color:var(--muted);font-size:12.5px;margin-top:2px;}
+  .hx-time .hx-sub{font-family:inherit;}
+  .hx-block label.hx-chk{display:flex;align-items:center;gap:6px;font-weight:400;margin:8px 0 0;cursor:pointer;}
+  .hx-item a{margin-left:auto;font-size:12.5px;color:var(--muted);flex:none;}
+  .stop-link,.hx-item a.stop-link{color:#1c5fb6;text-decoration:underline;margin-left:0;font-size:inherit;flex:initial;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>MBTA Bus Live</h1>
+    <p class="sub">Real-time bus arrivals, straight from the T's own data feed. Search for a route, then pick a stop.</p>
+  </header>
+
+  <input type="search" id="routeSearch" placeholder="Search by route number or name (e.g. 1, 66, Silver Line)…">
+  <select id="routeSelect"><option value="">Loading routes…</option></select>
+  <div class="route-meta" id="routeMeta" style="display:none;"></div>
+
+  <select id="stopSelect" disabled><option>Choose a route first…</option></select>
+
+  <div class="panel">
+    <h2>Next arrivals</h2>
+    <div id="predictions"><p class="empty">Select a stop to see live predictions.</p></div>
+  </div>
+
+  <div class="panel">
+    <h2>Service alerts</h2>
+    <div id="alerts"><p class="empty">Select a route to see current alerts.</p></div>
+  </div>
+
+  <div class="panel">
+    <h2>Buses running on this route</h2>
+    <div id="vehicles"><p class="empty">Select a route to see active vehicles.</p></div>
+  </div>
+
+  <div class="panel">
+    <h2>Bus history — last 5 hours</h2>
+    <p class="hx-note" id="hxStatus">Starting recorder…</p>
+    <div class="hx-block">
+      <label for="hxBus">Find a bus by number</label>
+      <div class="hx-in"><input type="search" id="hxBus" placeholder="Bus number, e.g. 1872"><button class="hx-btn" id="hxBusBtn">Search</button></div>
+    </div>
+    <div class="hx-block">
+      <label for="hxTime">See which buses were where at a specific time</label>
+      <div class="hx-in">
+        <input type="datetime-local" id="hxTime">
+        <select id="hxScope"><option value="selected">Selected route</option><option value="all">All routes</option></select>
+        <button class="hx-btn" id="hxAtBtn">Show</button>
+      </div>
+    </div>
+    <div class="hx-block">
+      <label for="hxStop">See which buses were at a stop (name or stop number)</label>
+      <div class="hx-in">
+        <input type="search" id="hxStop" list="hxStops" placeholder="Stop name or number, e.g. Harvard, Park St or 1234" autocomplete="off">
+        <datalist id="hxStops"></datalist>
+        <select id="hxStopWin">
+          <option value="18000000">Last 5 hours</option>
+          <option value="10800000">Last 3 hours</option>
+          <option value="3600000">Last hour</option>
+          <option value="1800000">Last 30 minutes</option>
+        </select>
+        <button class="hx-btn" id="hxStopBtn">Search</button>
+      </div>
+      <label class="hx-chk"><input type="checkbox" id="hxHeading"> Also show buses that were heading toward this stop</label>
+      <p class="hx-note" style="margin:6px 0 0;">Buses are sampled every 30 seconds, so a very quick stop can be missed. Tick the box above to catch buses on their way in.</p>
+    </div>
+    <div id="hxOut"></div>
+    <div style="margin-top:12px;"><button class="hx-btn ghost" id="hxCsv" hidden>Download these results (CSV)</button></div>
+    <p class="hx-note" id="hxNote" style="margin-top:14px;">MBTA doesn't publish recent vehicle history, so this page records it itself: every bus system-wide, every 30 seconds, kept for 5 hours. It only records while this page is open, and only in this browser — it can't show anything from before the page was first opened.</p>
+  </div>
+
+  <footer id="updated"></footer>
+</div>
+
+<script>
+const API = "https://api-v3.mbta.com";
+
+let allRoutes = [];
+let currentRoute = null;
+let currentStop = null;
+let stopsCache = {};
+let pollTimer = null;
+
+const routeSearch = document.getElementById("routeSearch");
+const routeSelect = document.getElementById("routeSelect");
+const routeMeta = document.getElementById("routeMeta");
+const stopSelect = document.getElementById("stopSelect");
+const predictionsEl = document.getElementById("predictions");
+const alertsEl = document.getElementById("alerts");
+const vehiclesEl = document.getElementById("vehicles");
+const updatedEl = document.getElementById("updated");
+
+function getHeaders(){ return {}; }
+
+const stopNo = id => /^\d+$/.test(String(id ?? "")) ? ` (#${id})` : "";   // plain text, for dropdown options
+const stopHref = id => "https://www.mbta.com/stops/" + id;
+const stopLink = id => /^\d+$/.test(String(id ?? ""))
+  ? ` (<a class="stop-link" href="${stopHref(id)}" target="_blank" rel="noopener" title="Open this stop on mbta.com">#${id}</a>)` : "";
+
+async function fetchWithRetry(url, tries=2){
+  let lastErr;
+  for(let i=0;i<tries;i++){
+    try{
+      const res = await fetch(url, {headers: getHeaders()});
+      if(!res.ok) throw new Error("HTTP "+res.status);
+      return await res.json();
+    }catch(e){
+      lastErr = e;
+      if(i < tries-1) await new Promise(r=>setTimeout(r, 1200));
+    }
+  }
+  throw lastErr;
+}
+
+function naturalSort(a,b){
+  return a.attributes.short_name.localeCompare(b.attributes.short_name, undefined, {numeric:true});
+}
+
+async function loadRoutes(){
+  try{
+    const json = await fetchWithRetry(`${API}/routes?filter[type]=3&sort=short_name`);
+    allRoutes = json.data.slice().sort(naturalSort);
+    renderRouteOptions(allRoutes);
+  }catch(e){
+    routeSelect.innerHTML = '<option value="">Couldn\'t load routes — try reloading the page</option>';
+  }
+}
+
+function renderRouteOptions(routes){
+  if(routes.length===0){
+    routeSelect.innerHTML = '<option value="">No routes match your search</option>';
+    return;
+  }
+  routeSelect.innerHTML = '<option value="">Choose a bus route…</option>' +
+    routes.map(r=>`<option value="${r.id}">${r.attributes.short_name || r.attributes.long_name} — ${r.attributes.long_name}</option>`).join("");
+}
+
+routeSearch.addEventListener("input", ()=>{
+  const q = routeSearch.value.trim().toLowerCase();
+  if(!q){ renderRouteOptions(allRoutes); return; }
+  const filtered = allRoutes.filter(r=>
+    (r.attributes.short_name||"").toLowerCase().includes(q) ||
+    (r.attributes.long_name||"").toLowerCase().includes(q)
+  );
+  renderRouteOptions(filtered);
+});
+
+routeSelect.addEventListener("change", ()=>{
+  const route = allRoutes.find(r=>r.id===routeSelect.value);
+  if(route) selectRoute(route);
+});
+
+async function selectRoute(routeData){
+  currentRoute = {
+    id: routeData.id,
+    name: routeData.attributes.short_name || routeData.attributes.long_name,
+    longName: routeData.attributes.long_name,
+    color: "#" + (routeData.attributes.color || "6b7280"),
+    textColor: "#" + (routeData.attributes.text_color || "ffffff")
+  };
+  currentStop = null;
+
+  routeMeta.style.display = "flex";
+  routeMeta.innerHTML = `<span class="route-chip" style="background:${currentRoute.color}; color:${currentRoute.textColor}">${currentRoute.name}</span><span class="name">${currentRoute.longName}</span>`;
+
+  stopSelect.disabled = true;
+  stopSelect.innerHTML = "<option>Loading stops…</option>";
+  predictionsEl.innerHTML = '<p class="empty">Select a stop to see live predictions.</p>';
+  delete predictionsEl.dataset.loaded;
+  delete alertsEl.dataset.loaded;
+  delete vehiclesEl.dataset.loaded;
+
+  try{
+    let stops = stopsCache[currentRoute.id];
+    if(!stops){
+      const json = await fetchWithRetry(`${API}/stops?filter[route]=${currentRoute.id}&sort=name`);
+      stops = json.data.map(s=>({id:s.id, name:s.attributes.name}));
+      stops.sort((a,b)=>a.name.localeCompare(b.name));
+      stopsCache[currentRoute.id] = stops;
+    }
+    stopSelect.innerHTML = `<option value="">Choose a stop on Route ${currentRoute.name}…</option>` +
+      stops.map(s=>`<option value="${s.id}">${s.name}${stopNo(s.id)}</option>`).join("");
+    stopSelect.disabled = false;
+  }catch(e){
+    stopSelect.innerHTML = "<option>Couldn't load stops — try again</option>";
+  }
+
+  loadVehicles();
+  setTimeout(loadAlerts, 400);
+  clearInterval(pollTimer);
+  pollTimer = setInterval(()=>{
+    if(currentStop) loadPredictions();
+    if(currentRoute) setTimeout(loadVehicles, 400);
+    if(currentRoute) setTimeout(loadAlerts, 800);
+  }, 15000);
+}
+
+let currentStopLabel = "";
+stopSelect.addEventListener("change", ()=>{
+  currentStop = stopSelect.value || null;
+  currentStopLabel = stopSelect.selectedOptions && stopSelect.selectedOptions[0] ? stopSelect.selectedOptions[0].textContent : "";
+  delete predictionsEl.dataset.loaded;
+  if(currentStop) loadPredictions();
+});
+
+function minutesFrom(iso){
+  if(!iso) return null;
+  return Math.round((new Date(iso) - new Date())/60000);
+}
+
+function statusLabel(attr){
+  if(attr.status) return attr.status;
+  if(attr.arrival_time && minutesFrom(attr.arrival_time) <= 0) return "Arriving";
+  return "Scheduled";
+}
+
+async function loadPredictions(){
+  const stopAtCall = currentStop, routeAtCall = currentRoute;
+  if(!predictionsEl.dataset.loaded) predictionsEl.innerHTML = '<p class="empty">Loading…</p>';
+  try{
+    const json = await fetchWithRetry(`${API}/predictions?filter[stop]=${currentStop}&filter[route]=${currentRoute.id}&include=trip,vehicle&sort=arrival_time`);
+    if(stopAtCall !== currentStop || routeAtCall !== currentRoute) return;
+    const trips = {}, vehicles = {};
+    (json.included||[]).forEach(t=>{
+      if(t.type==="trip") trips[t.id]=t.attributes;
+      if(t.type==="vehicle") vehicles[t.id]=t.attributes;
+    });
+
+    const rows = json.data
+      .map(p=>({p, mins: minutesFrom(p.attributes.arrival_time || p.attributes.departure_time)}))
+      .filter(r=>r.mins===null || r.mins > -1)
+      .sort((a,b)=>(a.mins??999)-(b.mins??999))
+      .slice(0,8);
+
+    if(rows.length===0){
+      predictionsEl.innerHTML = '<p class="empty">No buses currently predicted for this stop.</p>';
+      predictionsEl.dataset.loaded = "1";
+      updateTimestamp();
+      return;
+    }
+
+    const stopLine = currentStopLabel ? `<div class="status" style="margin-bottom:4px;">Stop: <strong>${esc(currentStopLabel.replace(/\s\(#\d+\)$/, ""))}</strong>${stopLink(currentStop)}</div>` : "";
+    predictionsEl.innerHTML = stopLine + rows.map(({p, mins})=>{
+      const trip = trips[p.relationships.trip?.data?.id] || {};
+      const vehicle = vehicles[p.relationships.vehicle?.data?.id];
+      const headsign = trip.headsign || "Destination unavailable";
+      const busLabel = vehicle?.label ? ` · Bus ${vehicle.label}` : "";
+      const mLabel = mins===null ? "—" : (mins<=0 ? "Now" : mins);
+      const unit = (mins!==null && mins>0) ? "<small>min</small>" : "";
+      return `<div class="board-row">
+        <div class="board-left">
+          <div class="headsign">${headsign}</div>
+          <div class="status">${statusLabel(p.attributes)}${busLabel}</div>
+        </div>
+        <div class="mins">${mLabel}${unit}</div>
+      </div>`;
+    }).join("");
+    predictionsEl.dataset.loaded = "1";
+    updateTimestamp();
+  }catch(e){
+    if(stopAtCall !== currentStop || routeAtCall !== currentRoute) return;
+    if(!predictionsEl.dataset.loaded){
+      predictionsEl.innerHTML = '<p class="err">Couldn\'t load predictions right now. Retrying automatically…</p>';
+    }
+    updateTimestamp(true);
+  }
+}
+
+function severityTag(sev){
+  if(sev>=7) return {cls:"severe", text:"Severe"};
+  if(sev>=4) return {cls:"moderate", text:"Delay"};
+  return {cls:"minor", text:"Notice"};
+}
+
+async function loadAlerts(){
+  const routeAtCall = currentRoute;
+  if(!alertsEl.dataset.loaded) alertsEl.innerHTML = '<p class="empty">Loading…</p>';
+  try{
+    const json = await fetchWithRetry(`${API}/alerts?filter[route]=${currentRoute.id}&filter[lifecycle]=NEW,ONGOING,ONGOING_UPCOMING,UPCOMING`);
+    if(routeAtCall !== currentRoute) return;
+
+    if(json.data.length===0){
+      alertsEl.innerHTML = '<p class="empty">No active alerts, delays, or diversions on this route.</p>';
+      alertsEl.dataset.loaded = "1";
+      updateTimestamp();
+      return;
+    }
+
+    const sorted = json.data.slice().sort((a,b)=>{
+      const aUp = a.attributes.lifecycle==="UPCOMING" ? 1 : 0;
+      const bUp = b.attributes.lifecycle==="UPCOMING" ? 1 : 0;
+      if(aUp !== bUp) return aUp - bUp;
+      return (b.attributes.severity||0)-(a.attributes.severity||0);
+    }).slice(0,8);
+
+    const fmt = iso => new Date(iso).toLocaleDateString(undefined,{month:"short", day:"numeric"});
+
+    alertsEl.innerHTML = sorted.map(a=>{
+      const attr = a.attributes;
+      const isUpcoming = attr.lifecycle==="UPCOMING";
+      const tag = isUpcoming ? {cls:"upcoming", text:"Upcoming"} : severityTag(attr.severity||0);
+      const effect = (attr.effect||"").replace(/_/g," ").toLowerCase();
+
+      let dateRange = attr.timeframe || "";
+      if(!dateRange){
+        const period = (attr.active_period||[])[0];
+        if(period && period.start){
+          const start = fmt(period.start);
+          const end = period.end ? fmt(period.end) : null;
+          dateRange = end ? `${start} – ${end}` : `Starting ${start}`;
+        }
+      }
+
+      return `<div class="alert-row">
+        <div class="alert-top">
+          <span class="alert-tag ${tag.cls}">${isUpcoming ? tag.text : (effect || tag.text)}</span>
+        </div>
+        <div class="alert-header">${attr.header || attr.short_header || "Service alert"}</div>
+        ${dateRange ? `<div class="alert-dates">${dateRange}</div>` : ""}
+      </div>`;
+    }).join("");
+    alertsEl.dataset.loaded = "1";
+    updateTimestamp();
+  }catch(e){
+    if(routeAtCall !== currentRoute) return;
+    if(!alertsEl.dataset.loaded){
+      alertsEl.innerHTML = '<p class="err">Couldn\'t load alerts right now. Retrying automatically…</p>';
+    }
+    updateTimestamp(true);
+  }
+}
+
+const STATUS_TEXT = {
+  STOPPED_AT: "Stopped at",
+  INCOMING_AT: "Arriving at",
+  IN_TRANSIT_TO: "En route to"
+};
+
+async function loadVehicles(){
+  const routeAtCall = currentRoute;
+  if(!vehiclesEl.dataset.loaded) vehiclesEl.innerHTML = '<p class="empty">Loading…</p>';
+  try{
+    const json = await fetchWithRetry(`${API}/vehicles?filter[route]=${currentRoute.id}&include=stop,trip`);
+    if(routeAtCall !== currentRoute) return;
+    const stopsById = {}, tripsById = {};
+    (json.included||[]).forEach(i=>{
+      if(i.type==="stop") stopsById[i.id]=i.attributes.name;
+      if(i.type==="trip") tripsById[i.id]=i.attributes;
+    });
+
+    if(json.data.length===0){
+      vehiclesEl.innerHTML = '<p class="empty">No buses currently reporting on this route.</p>';
+      vehiclesEl.dataset.loaded = "1";
+      updateTimestamp();
+      return;
+    }
+
+    vehiclesEl.innerHTML = json.data.map(v=>{
+      const stopId = v.relationships.stop?.data?.id;
+      const stopName = stopsById[stopId] || "unknown stop";
+      const trip = tripsById[v.relationships.trip?.data?.id] || {};
+      const statusText = STATUS_TEXT[v.attributes.current_status] || "In service";
+      const label = v.attributes.label ? `Bus ${v.attributes.label}` : "";
+      return `<div class="veh-row">
+        <span class="veh-badge" style="background:${currentRoute.color}"></span>
+        <div>
+          <div>${statusText} <strong>${stopName}</strong>${stopLink(stopId)}</div>
+          <div class="veh-dest">${[label, trip.headsign ? "To "+trip.headsign : ""].filter(Boolean).join(" · ")}</div>
+        </div>
+      </div>`;
+    }).join("");
+    vehiclesEl.dataset.loaded = "1";
+    updateTimestamp();
+  }catch(e){
+    if(routeAtCall !== currentRoute) return;
+    if(!vehiclesEl.dataset.loaded){
+      vehiclesEl.innerHTML = '<p class="err">Couldn\'t load vehicle positions right now. Retrying automatically…</p>';
+    }
+    updateTimestamp(true);
+  }
+}
+
+function updateTimestamp(trouble){
+  const notice = trouble ? ' · Having trouble reaching the MBTA feed — showing last known data and retrying.' : '';
+  updatedEl.innerHTML = `Last updated ${new Date().toLocaleTimeString()} · Refreshes every 15 seconds${notice} · Data from
+    <a href="https://www.mbta.com/developers" target="_blank" rel="noopener">MBTA's public V3 API</a>. Not affiliated with the MBTA — arrival times are predictions, not guarantees.`;
+}
+
+
+/* ===== Bus history: records every bus for 5 hours, so a bus number can be looked up at a given time ===== */
+const HX_WINDOW = 5 * 60 * 60 * 1000, HX_POLL = 30000, HX_HEARTBEAT = 5 * 60 * 1000, HX_LOOKBACK = 15 * 60 * 1000;
+const hx = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const HX_CODE = {STOPPED_AT:"S", INCOMING_AT:"I", IN_TRANSIT_TO:"T"};
+const HX_TEXT = {S:"Stopped at", I:"Arriving at", T:"En route to"};
+let hxDB = null, hxLast = new Map(), hxPruneAt = 0, hxResults = [], hxStopNames = [];
+let hxMode = "local";   // "server" when the site has the shared collector behind it, otherwise this browser records on its own
+async function hxApi(params){
+  const r = await fetch("/api/history?" + new URLSearchParams(params));
+  if(!r.ok) throw new Error("HTTP " + r.status);
+  return r.json();
+}
+const HX_RANK = {S: 3, I: 2, T: 1};
+
+function hxOpen(){
+  return new Promise((res, rej) => {
+    if(!window.indexedDB) return rej(new Error("IndexedDB unavailable"));
+    const r = indexedDB.open("mbtaBusHistory", 3);
+    r.onupgradeneeded = e => {
+      let st;
+      if(e.oldVersion < 1){
+        st = r.result.createObjectStore("events", {autoIncrement: true});
+        st.createIndex("ts", "ts"); st.createIndex("label", "label");
+      }else{ st = r.transaction.objectStore("events"); }
+      if(e.oldVersion < 2) st.createIndex("stop", "stop");
+      if(e.oldVersion < 3) st.createIndex("stopId", "stopId");
+    };
+    r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error);
+  });
+}
+const hxReq = r => new Promise((res, rej) => { r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); });
+const hxDone = tx => new Promise((res, rej) => { tx.oncomplete = res; tx.onerror = () => rej(tx.error); tx.onabort = () => rej(tx.error); });
+const hxRead = fn => fn(hxDB.transaction("events").objectStore("events"));
+
+const hxStamp = ts => {
+  const d = new Date(ts), today = new Date().toDateString() === d.toDateString();
+  const t = d.toLocaleTimeString([], {hour:"numeric", minute:"2-digit", second:"2-digit"});
+  return today ? t : d.toLocaleDateString([], {month:"short", day:"numeric"}) + " " + t;
+};
+const hxLocalInput = ms => { const d = new Date(ms - new Date(ms).getTimezoneOffset() * 60000); return d.toISOString().slice(0, 16); };
+const hxRouteName = id => { const r = allRoutes.find(x => x.id === id); return r ? (r.attributes.short_name || r.attributes.long_name) : (id || "—"); };
+
+async function hxRecord(){
+  if(!hxDB) return;
+  try{
+    const j = await fetchWithRetry(`${API}/vehicles?filter[route_type]=3&include=stop`);
+    const stops = {};
+    (j.included || []).forEach(i => { if(i.type === "stop") stops[i.id] = i.attributes.name; });
+    const now = Date.now(), batch = [];
+    for(const v of j.data){
+      const a = v.attributes; if(!a.label) continue;
+      const route = v.relationships.route?.data?.id || "";
+      const stop = stops[v.relationships.stop?.data?.id] || "";
+      const status = HX_CODE[a.current_status] || "T";
+      const key = [route, stop, status, a.direction_id].join("|");
+      const prev = hxLast.get(a.label);
+      if(prev && prev.key === key && now - prev.at < HX_HEARTBEAT) continue;   // unchanged: don't store it again
+      hxLast.set(a.label, {key, at: now});
+      batch.push({ts: Date.parse(a.updated_at) || now, label: String(a.label), route, stop, stopId: String(v.relationships.stop?.data?.id || ""), status, dir: a.direction_id,
+        lat: a.latitude != null ? +(+a.latitude).toFixed(5) : null, lon: a.longitude != null ? +(+a.longitude).toFixed(5) : null});
+    }
+    if(batch.length){
+      const tx = hxDB.transaction("events", "readwrite"), st = tx.objectStore("events");
+      batch.forEach(e => st.add(e));
+      await hxDone(tx);
+    }
+    if(now > hxPruneAt){ hxPruneAt = now + 5 * 60 * 1000; await hxPrune(now); await hxLoadStops(); }
+    await hxStatus();
+  }catch(e){ hx("hxStatus").textContent = "Recorder hit a snag reaching the MBTA feed — retrying automatically…"; }
+}
+
+async function hxPrune(now){
+  const tx = hxDB.transaction("events", "readwrite");
+  const req = tx.objectStore("events").index("ts").openCursor(IDBKeyRange.upperBound(now - HX_WINDOW));
+  req.onsuccess = () => { const c = req.result; if(c){ c.delete(); c.continue(); } };
+  await hxDone(tx);
+}
+
+async function hxServerStatus(){
+  const s = await hxApi({op: "status"}), now = Date.now();
+  hx("hxTime").min = hxLocalInput(now - HX_WINDOW); hx("hxTime").max = hxLocalInput(now);
+  if(!hx("hxTime").value) hx("hxTime").value = hxLocalInput(now - 30 * 60 * 1000);
+  hx("hxStatus").textContent = s.empty
+    ? "Shared history is set up, but the collector hasn't recorded anything yet — it checks the MBTA feed every minute once it's running."
+    : `Shared history, recorded around the clock for everyone · reaches back to ${hxStamp(s.oldest)} · last updated ${hxStamp(s.updated)}`;
+}
+
+async function hxStatus(){
+  if(hxMode === "server") return hxServerStatus();
+  const [n, first] = await hxRead(st => Promise.all([hxReq(st.count()), hxReq(st.index("ts").openCursor())]));
+  const now = Date.now();
+  hx("hxTime").min = hxLocalInput(now - HX_WINDOW); hx("hxTime").max = hxLocalInput(now);
+  if(!hx("hxTime").value) hx("hxTime").value = hxLocalInput(now - 30 * 60 * 1000);
+  hx("hxStatus").textContent = n
+    ? `Recording every bus · ${n.toLocaleString()} position records · history reaches back to ${hxStamp(first.value.ts)}`
+    : "Recording started — first positions will appear in a moment.";
+}
+
+async function hxByBus(q){
+  if(hxMode === "server") return (await hxApi({op: "bus", q})).events;
+  let rows = await hxRead(st => hxReq(st.index("label").getAll(IDBKeyRange.only(q))));
+  if(!rows.length) rows = await hxRead(st => hxReq(st.index("label").getAll(IDBKeyRange.bound(q, q + "\uffff"))));
+  return rows.sort((a, b) => b.ts - a.ts);
+}
+
+async function hxAt(T, routeId){
+  if(hxMode === "server") return (await hxApi({op: "at", t: T, route: routeId || ""})).events;
+  const rows = await hxRead(st => hxReq(st.index("ts").getAll(IDBKeyRange.bound(T - HX_LOOKBACK, T))));
+  const latest = new Map();                       // each bus's most recent record at or before T, across all routes
+  rows.forEach(e => { const p = latest.get(e.label); if(!p || e.ts > p.ts) latest.set(e.label, e); });
+  return [...latest.values()].filter(e => !routeId || e.route === routeId)
+    .sort((a, b) => a.label.localeCompare(b.label, undefined, {numeric: true}));
+}
+
+function hxShow(rows, title, emptyMsg){
+  hxResults = rows;
+  hx("hxCsv").hidden = !rows.length;
+  if(!rows.length){ hx("hxOut").innerHTML = `<p class="empty">${esc(emptyMsg)}</p>`; return; }
+  const shown = rows.slice(0, 300);
+  hx("hxOut").innerHTML = `<div class="hx-title">${esc(title)}</div>` + shown.map(e => `
+    <div class="hx-item">
+      <div class="hx-time">${esc(hxStamp(e.ts))}${e.last && e.last - e.ts >= 1000 ? `<div class="hx-sub">until ${esc(new Date(e.last).toLocaleTimeString([], {hour:"numeric", minute:"2-digit", second:"2-digit"}))}</div>` : ""}</div>
+      <div><div><strong>Bus ${esc(e.label)}</strong> · Route ${esc(hxRouteName(e.route))}</div>
+        <div class="hx-sub">${HX_TEXT[e.status]} ${esc(e.stop || "unknown stop")}${stopLink(e.stopId)}</div></div>
+      ${e.lat != null ? `<a href="https://www.google.com/maps?q=${e.lat},${e.lon}" target="_blank" rel="noopener">map</a>` : ""}
+    </div>`).join("") + (rows.length > shown.length ? `<p class="empty">Showing the first ${shown.length} of ${rows.length} — download the CSV for everything.</p>` : "");
+}
+
+function hxFillStops(){ hx("hxStops").innerHTML = hxStopNames.slice(0, 3000).map(n => `<option value="${esc(n)}"></option>`).join(""); }
+
+async function hxLoadStops(){
+  if(hxMode === "server"){ hxStopNames = (await hxApi({op: "stops"})).stops || []; return hxFillStops(); }
+  const names = [];
+  await hxRead(st => new Promise((res, rej) => {
+    const r = st.index("stop").openKeyCursor(null, "nextunique");
+    r.onsuccess = () => { const c = r.result; if(c){ if(c.key) names.push(c.key); c.continue(); } else res(); };
+    r.onerror = () => rej(r.error);
+  }));
+  hxStopNames = names.sort((a, b) => a.localeCompare(b));
+  hxFillStops();
+}
+
+// Turn raw position records into "visits": one row per bus per stop, with first/last time seen there
+function hxVisits(recs){
+  const byKey = new Map();
+  recs.slice().sort((a, b) => a.ts - b.ts).forEach(e => {
+    const k = e.label + "|" + e.stop;
+    if(!byKey.has(k)) byKey.set(k, []);
+    byKey.get(k).push(e);
+  });
+  const out = [];
+  for(const list of byKey.values()){
+    let cur = null;
+    for(const e of list){
+      if(cur && e.ts - cur.last <= HX_HEARTBEAT + 60000){
+        cur.last = e.ts;
+        if(HX_RANK[e.status] > HX_RANK[cur.status]) cur.status = e.status;
+      }else{
+        cur = {ts: e.ts, last: e.ts, label: e.label, route: e.route, stop: e.stop, stopId: e.stopId, status: e.status, lat: e.lat, lon: e.lon};
+        out.push(cur);
+      }
+    }
+  }
+  return out.sort((a, b) => b.ts - a.ts);
+}
+
+const hxWinLabel = () => hx("hxStopWin").selectedOptions && hx("hxStopWin").selectedOptions[0] ? hx("hxStopWin").selectedOptions[0].textContent.toLowerCase() : "in the window";
+
+async function hxAtStop(){
+  if(!hxDB && hxMode !== "server") return hxShow([], "", "History isn't available in this browser.");
+  const raw = hx("hxStop").value.trim().replace(/^#/, ""), q = raw.toLowerCase();
+  if(!q) return;
+  if(/^\d+$/.test(raw)){   // a stop number
+    const since = Date.now() - (+hx("hxStopWin").value), heading = hx("hxHeading").checked;
+    let recs = hxMode === "server"
+      ? (await hxApi({op: "stopEvents", ids: JSON.stringify([raw]), since, heading: heading ? 1 : 0})).events
+      : await hxRead(st => hxReq(st.index("stopId").getAll(IDBKeyRange.only(raw))));
+    recs = recs.filter(e => e.ts >= since && (heading || e.status !== "T"));
+    const visits = hxVisits(recs), nm = visits.length ? visits[0].stop : "";
+    return hxShow(visits, `${visits.length} bus visit${visits.length === 1 ? "" : "s"} at stop #${raw}${nm ? " — " + nm : ""} — ${hxWinLabel()}, newest first`,
+      `No buses recorded at stop #${raw} in that window. Only stops buses have been recorded at are searchable, and older records may not carry stop numbers.`);
+  }
+  if(!hxStopNames.length) await hxLoadStops();
+  const exact = hxStopNames.filter(n => n.toLowerCase() === q);
+  const matches = exact.length ? exact : hxStopNames.filter(n => n.toLowerCase().includes(q));
+  if(!matches.length) return hxShow([], "", `No recorded stop matches "${raw}". Only stops buses have been recorded at are searchable.`);
+  if(matches.length > 30) return hxShow([], "", `"${raw}" matches ${matches.length} different stops — type more of the name (for example add the cross street).`);
+  const since = Date.now() - (+hx("hxStopWin").value), heading = hx("hxHeading").checked;
+  let recs = [];
+  if(hxMode === "server") recs = (await hxApi({op: "stopEvents", names: JSON.stringify(matches), since, heading: heading ? 1 : 0})).events;
+  else for(const n of matches) recs = recs.concat(await hxRead(st => hxReq(st.index("stop").getAll(IDBKeyRange.only(n)))));
+  recs = recs.filter(e => e.ts >= since && (heading || e.status !== "T"));
+  const visits = hxVisits(recs);
+  const win = hxWinLabel();
+  hxShow(visits, `${visits.length} bus visit${visits.length === 1 ? "" : "s"} at ${matches.length === 1 ? matches[0] : `${matches.length} stops matching "${raw}"`} — ${win}, newest first`,
+    `No buses recorded at "${raw}" in that window. They may have passed between samples (try ticking "heading toward"), or this page wasn't open then.`);
+}
+
+async function hxSearchBus(){
+  const q = hx("hxBus").value.trim();
+  if(!q) return;
+  if(!hxDB && hxMode !== "server") return hxShow([], "", "History isn't available in this browser.");
+  const rows = await hxByBus(q);
+  hxShow(rows, `Bus ${q} — ${rows.length} record${rows.length === 1 ? "" : "s"}, newest first`,
+    `No records for bus ${q} in the last 5 hours. It may not have been in service, or this page wasn't open then.`);
+}
+
+async function hxShowAt(){
+  if(!hxDB && hxMode !== "server") return hxShow([], "", "History isn't available in this browser.");
+  const T = new Date(hx("hxTime").value).getTime();
+  if(!T || T > Date.now() || T < Date.now() - HX_WINDOW) return hxShow([], "", "Pick a time within the last 5 hours.");
+  const routeId = hx("hxScope").value === "selected" ? currentRoute?.id : null;
+  if(hx("hxScope").value === "selected" && !routeId) return hxShow([], "", "Pick a route above first, or switch this to All routes.");
+  const rows = await hxAt(T, routeId);
+  const where = routeId ? `on Route ${currentRoute.name}` : "across all routes";
+  hxShow(rows, `${rows.length} bus${rows.length === 1 ? "" : "es"} ${where} as of ${hxStamp(T)} (last known position within 15 minutes before)`,
+    `No bus records found ${where} for that time. This page may not have been open then.`);
+}
+
+function hxExport(){
+  if(!hxResults.length) return;
+  const stamp = ts => { const d = new Date(ts), p = n => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`; };
+  const q = v => `"${String(v ?? "").replace(/"/g, '""')}"`;
+  const span = hxResults.some(e => e.last);
+  const lines = [["Time", ...(span ? ["Last seen"] : []), "Bus", "Route", "Status", "Stop", "Stop number", "Stop page", "Latitude", "Longitude"].join(",")].concat(
+    hxResults.map(e => [stamp(e.ts), ...(span ? [e.last ? stamp(e.last) : ""] : []), e.label, hxRouteName(e.route), HX_TEXT[e.status], e.stop, e.stopId, /^\d+$/.test(String(e.stopId ?? "")) ? stopHref(e.stopId) : "", e.lat, e.lon].map(q).join(",")));
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(new Blob([lines.join("\n")], {type: "text/csv"}));
+  a.download = `mbta-bus-history-${new Date().toISOString().slice(0, 10)}.csv`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+hx("hxBusBtn").onclick = hxSearchBus;
+hx("hxBus").addEventListener("keydown", e => { if(e.key === "Enter") hxSearchBus(); });
+hx("hxAtBtn").onclick = hxShowAt;
+hx("hxStopBtn").onclick = hxAtStop;
+hx("hxStop").addEventListener("keydown", e => { if(e.key === "Enter") hxAtStop(); });
+hx("hxStop").addEventListener("focus", () => { if(hxDB || hxMode === "server") hxLoadStops().catch(() => {}); });
+hx("hxCsv").onclick = hxExport;
+
+(async () => {
+  try{   // Deployed with the collector? Then history is shared and always-on.
+    const r = await fetch("/api/history?op=status");
+    if(r.ok && (r.headers.get("content-type") || "").includes("json")){
+      hxMode = "server";
+      hx("hxNote").textContent = "History is recorded by a collector that runs around the clock on the server, so everyone sees the same history — even when nobody has this page open. It keeps the last 5 hours.";
+      await hxServerStatus(); await hxLoadStops().catch(() => {});
+      setInterval(() => hxServerStatus().catch(() => {}), 60000);
+      return;
+    }
+  }catch(e){}
+  hxOpen().then(db => { hxDB = db; hxRecord(); setInterval(hxRecord, HX_POLL); })
+    .catch(() => { hx("hxStatus").textContent = "History can't run here: this browser is blocking local storage (private window or a security policy)."; });
+})();
+
+loadRoutes();
+</script>
+</body>
+</html>
